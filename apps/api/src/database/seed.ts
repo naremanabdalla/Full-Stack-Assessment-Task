@@ -12,6 +12,7 @@ import { OrganizationSchema } from '../organizations/schemas/organization.schema
 import { ProjectMemberSchema } from '../project-members/schemas/project-member.schema';
 import { ProjectSchema } from '../projects/schemas/project.schema';
 import { TaskSchema } from '../tasks/schemas/task.schema';
+import { TaskCounterSchema } from '../tasks/schemas/task-counter.schema';
 import { CommentSchema } from '../comments/schemas/comment.schema';
 import { UserSchema } from '../users/schemas/user.schema';
 
@@ -27,6 +28,7 @@ const OrganizationMember = mongoose.model('OrganizationMember', OrganizationMemb
 const Project = mongoose.model('Project', ProjectSchema);
 const ProjectMember = mongoose.model('ProjectMember', ProjectMemberSchema);
 const Task = mongoose.model('Task', TaskSchema);
+const TaskCounter = mongoose.model('TaskCounter', TaskCounterSchema);
 const Comment = mongoose.model('Comment', CommentSchema);
 
 interface SeedUser {
@@ -49,6 +51,7 @@ async function seed(): Promise<void> {
 
   await Promise.all([
     Comment.deleteMany({}),
+    TaskCounter.deleteMany({}),
     Task.deleteMany({}),
     ProjectMember.deleteMany({}),
     Project.deleteMany({}),

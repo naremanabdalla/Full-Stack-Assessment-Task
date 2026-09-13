@@ -48,10 +48,25 @@ export interface TaskSummary {
   title: string;
   status: TaskStatus;
   priority: TaskPriority;
+  assignee: UserSummary | null;
   commentCount: number;
   createdBy: UserSummary;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface TaskAssigneeChangedMetadata {
+  previousAssignee: UserSummary | null;
+  newAssignee: UserSummary | null;
+}
+
+export interface TaskActivityEntry {
+  id: string;
+  taskId: string;
+  type: 'TASK_ASSIGNEE_CHANGED';
+  actor: UserSummary;
+  metadata: TaskAssigneeChangedMetadata;
+  createdAt: string;
 }
 
 export interface TaskDetail extends TaskSummary {

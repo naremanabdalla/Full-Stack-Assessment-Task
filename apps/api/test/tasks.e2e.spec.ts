@@ -114,6 +114,44 @@ describe('Tasks', () => {
       .expect(403);
   });
 
+  it('refuses to change task status for someone outside the project', async () => {
+    const taskResponse = await request(app.getHttpServer())
+      .post(`/projects/${projectId}/tasks`)
+      .set('Authorization', authHeader(member))
+      .send({ title: 'Restricted task' })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .patch(`/tasks/${taskResponse.body.id}/status`)
+      .set('Authorization', authHeader(outsider))
+      .send({ status: TaskStatus.DONE })
+      .expect(403);
+
+    const task = await request(app.getHttpServer())
+      .get(`/tasks/${taskResponse.body.id}`)
+      .set('Authorization', authHeader(member))
+      .expect(200);
+
+    expect(task.body.status).toBe(TaskStatus.TODO);
+  });
+
+  it('allocates unique sequential numbers for concurrent task creation', async () => {
+    const responses = await Promise.all(
+      Array.from({ length: 20 }, (_, index) =>
+        request(app.getHttpServer())
+          .post(`/projects/${projectId}/tasks`)
+          .set('Authorization', authHeader(member))
+          .send({ title: `Concurrent task ${index + 1}` }),
+      ),
+    );
+
+    expect(responses.every((response) => response.status === 201)).toBe(true);
+    expect(responses.map((response) => response.body.number).sort((a, b) => a - b)).toEqual(
+      Array.from({ length: 20 }, (_, index) => index + 1),
+    );
+    expect(new Set(responses.map((response) => response.body.key)).size).toBe(20);
+  });
+
   it('rejects a task without a usable title', async () => {
     const response = await request(app.getHttpServer())
       .post(`/projects/${projectId}/tasks`)

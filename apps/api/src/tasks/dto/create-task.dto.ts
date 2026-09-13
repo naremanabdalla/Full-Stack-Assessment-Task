@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString, Length } from 'class-validator';
+import { IsEnum, IsMongoId, IsOptional, IsString, Length } from 'class-validator';
 import {
   TASK_DESCRIPTION_MAX_LENGTH,
   TASK_PRIORITIES,
@@ -25,4 +25,8 @@ export class CreateTaskDto {
   @IsOptional()
   @IsEnum(TASK_PRIORITIES)
   priority?: TaskPriority;
+
+  @IsOptional()
+  @IsMongoId()
+  assignee?: string | null;
 }
