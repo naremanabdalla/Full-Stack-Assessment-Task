@@ -49,19 +49,39 @@ const handler = async (
   req: Request,
   res: Response,
 ): Promise<void | Response> => {
+  console.log('REQUEST:', req.method, req.url);
+  console.log('ORIGIN:', req.headers.origin);
+
+  if (req.method === 'OPTIONS') {
+    console.log('OPTIONS HIT');
+
+    res.setHeader(
+      'Access-Control-Allow-Origin',
+      'https://projectflow-web-eta.vercel.app',
+    );
+    res.setHeader(
+      'Access-Control-Allow-Methods',
+      'GET,POST,PUT,PATCH,DELETE,OPTIONS',
+    );
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      'Content-Type, Authorization, Accept',
+    );
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+
+    return res.status(204).end();
+  }
+
   try {
     const server = await bootstrapServer();
     return server(req, res);
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : String(error);
-
     console.error('BOOTSTRAP ERROR:', error);
 
     return res.status(500).json({
       statusCode: 500,
       message: 'Server failed to start',
-      error: errorMessage,
+      error: error instanceof Error ? error.message : String(error),
     });
   }
 };
