@@ -11,8 +11,6 @@ let cachedServer: (req: Request, res: Response) => void;
 async function bootstrapServer() {
   if (!cachedServer) {
     const app = await NestFactory.create(AppModule, { bufferLogs: true });
-    const configService = app.get(ConfigService);
-
     app.enableCors({
       origin: true,
       credentials: true,
