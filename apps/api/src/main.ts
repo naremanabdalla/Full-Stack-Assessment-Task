@@ -1,5 +1,6 @@
 import 'reflect-metadata';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import type { Request, Response } from 'express';
 import helmet from 'helmet';
@@ -9,35 +10,60 @@ type ServerHandler = (req: Request, res: Response) => void;
 
 let cachedServer: ServerHandler;
 
+async function createApp() {
+  const app = await NestFactory.create(AppModule, {
+    bufferLogs: true,
+  });
+
+  const configService = app.get(ConfigService);
+
+  app.use(helmet());
+
+  app.enableCors({
+    origin:
+      configService.get<string>('WEB_ORIGIN') ??
+      'http://localhost:3742',
+    credentials: true,
+  });
+
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      transformOptions: {
+        enableImplicitConversion: false,
+      },
+    }),
+  );
+
+  return app;
+}
+
+// Local development
+async function bootstrap(): Promise<void> {
+  const app = await createApp();
+
+  const configService = app.get(ConfigService);
+  const port = configService.get<number>('API_PORT') ?? 4732;
+
+  await app.listen(port);
+
+  new Logger('Bootstrap').log(
+    `ProjectFlow API listening on http://localhost:${port}`,
+  );
+}
+
+// Vercel serverless handler
 async function bootstrapServer(): Promise<ServerHandler> {
   if (!cachedServer) {
-    const app = await NestFactory.create(AppModule, {
-      bufferLogs: true,
-    });
-
-    app.enableCors({
-      origin: 'https://projectflow-web-eta.vercel.app',
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
-    });
-
-    app.use(helmet({ crossOriginResourcePolicy: false }));
-
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: {
-          enableImplicitConversion: false,
-        },
-      }),
-    );
+    const app = await createApp();
 
     await app.init();
 
-    cachedServer = app.getHttpAdapter().getInstance() as ServerHandler;
+    cachedServer = app
+      .getHttpAdapter()
+      .getInstance() as ServerHandler;
   }
 
   return cachedServer;
@@ -49,6 +75,7 @@ const handler = async (
 ): Promise<void | Response> => {
   try {
     const server = await bootstrapServer();
+
     return server(req, res);
   } catch (error) {
     console.error('BOOTSTRAP ERROR:', error);
@@ -61,6 +88,9 @@ const handler = async (
   }
 };
 
-export default handler;
-module.exports = handler;
-module.exports.default = handler;
+if (process.env.VERCEL) {
+  module.exports = handler;
+  module.exports.default = handler;
+} else {
+  void bootstrap();
+}
