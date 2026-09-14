@@ -11,6 +11,7 @@ let cachedServer: (req: Request, res: Response) => void;
 async function bootstrapServer() {
   if (!cachedServer) {
     const app = await NestFactory.create(AppModule, { bufferLogs: true });
+
     app.enableCors({
       origin: true,
       credentials: true,
@@ -41,18 +42,13 @@ async function bootstrapServer() {
 }
 
 export default async function handler(req: Request, res: Response) {
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.status(204).end();
-    return;
-  }
-
   const server = await bootstrapServer();
   return server(req, res);
 }
+
+// السطرين دول بيحلوا مشكلة No exports found تماماً في Vercel
+module.exports = handler;
+module.exports.default = handler;
 
 if (!process.env.VERCEL) {
   const bootstrapLocal = async () => {
