@@ -2,7 +2,7 @@
 
 ProjectFlow is a lightweight project and task tracker for software teams.
 Organizations own projects, projects own tasks, and tasks carry a status, a
-priority and a discussion thread.
+priority, an optional assignee, a discussion thread, and assignment activity.
 
 It is a TypeScript monorepo: a NestJS + MongoDB API and a Next.js App Router
 frontend, sharing a small package of domain types and enums.
@@ -78,7 +78,7 @@ pnpm seed
 ```
 
 The seed is repeatable — it clears the ProjectFlow collections and reinserts a
-fresh organization, users, projects, tasks and comments.
+fresh organization, users, projects, tasks, comments, and task counters.
 
 ## Running the apps
 
@@ -131,8 +131,8 @@ pnpm dev
 | `pnpm format`    | Prettier write                             |
 
 `pnpm test` does not need a running MongoDB — it starts a throwaway in-memory
-server for the duration of the run. The first run downloads a MongoDB binary
-(around 100 MB) and caches it.
+server for the duration of the run. The first run downloads and caches a
+MongoDB test binary, which may be several hundred megabytes.
 
 ---
 
@@ -199,6 +199,7 @@ Organization        ── OrganizationMember ── User      (OWNER | ADMIN | 
 Organization  ── Project
 Project             ── ProjectMember      ── User      (PROJECT_MANAGER | MEMBER)
 Project       ── Task ── Comment
+Task          ── Activity                         (assignment history)
 ```
 
 Membership is stored in its own collection rather than as arrays on the parent
@@ -207,6 +208,11 @@ collections carry a unique compound index on their two foreign keys.
 
 Tasks are numbered per project and identified by a human-readable key derived
 from the project key: `ENG-1`, `ENG-2`, `WEB-1`.
+
+Task assignment is role-aware. Organization owners/admins and project managers
+can assign any project member; regular members can assign or unassign only
+themselves. Assignment changes are recorded as `TASK_ASSIGNEE_CHANGED`
+activities and exposed newest-first through the task activity endpoint.
 
 ### Authorization
 
@@ -237,6 +243,7 @@ POST   /projects/:projectId/members
 GET    /projects/:projectId/tasks
 POST   /projects/:projectId/tasks
 GET    /tasks/:taskId
+GET    /tasks/:taskId/activity
 PATCH  /tasks/:taskId
 PATCH  /tasks/:taskId/status
 DELETE /tasks/:taskId

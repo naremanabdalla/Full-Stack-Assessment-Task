@@ -4,7 +4,7 @@
 
 ProjectFlow is a TypeScript monorepo for lightweight project and task tracking. It contains a NestJS REST API backed by MongoDB/Mongoose and a Next.js App Router web application. The API owns authentication, authorization, validation, persistence, and business rules. The web application is a client of that API and uses TanStack Query for server state. `packages/shared` provides domain enums, limits, and API response types shared by both applications.
 
-The main assessment concern is an authorization bypass in the task-status endpoint: `PATCH /tasks/:taskId/status` requires a valid JWT but does not check whether the authenticated user can access the task's project. This should be fixed before treating the endpoint as production-ready.
+The Phase 2 authorization bypass in `PATCH /tasks/:taskId/status` has been fixed and covered by regression tests. Phase 3 adds role-aware task assignment and indexed assignment activity. The remaining priority is production hardening around token storage, abuse controls, sequence migration, and operational scale.
 
 ## 1. Tech Stack & Libraries
 
@@ -130,6 +130,7 @@ POST   /projects/:projectId/members
 GET    /projects/:projectId/tasks
 POST   /projects/:projectId/tasks
 GET    /tasks/:taskId
+GET    /tasks/:taskId/activity
 PATCH  /tasks/:taskId
 PATCH  /tasks/:taskId/status
 DELETE /tasks/:taskId
@@ -185,11 +186,11 @@ The following paths correctly reuse project authorization:
 - Task list, task creation, task detail, general task update, and task deletion use `assertCanView` or `assertCanManage`.
 - Comment listing and creation resolve the task first, then call `assertCanView` for the task's project.
 
-### Important authorization gap
+### Resolved authorization gap
 
-`TasksController.updateStatus()` does not inject `@CurrentUser('id')`. It calls `TasksService.updateStatus(taskId, dto)`, and that service only loads and saves the task. Consequently, any caller with any valid JWT can change the status of any task if they know its ID, including tasks in projects they cannot access.
+The original `TasksController.updateStatus()` path did not inject `@CurrentUser('id')`, allowing any authenticated user who knew a task ID to change its status. The controller now passes the authenticated user to `TasksService`, which calls `ProjectAccessService.assertCanView()` before saving. The regression test verifies that an outsider receives `403` and that the status remains unchanged.
 
-This is a server-side authorization bypass, not merely a frontend visibility issue. The endpoint should accept the authenticated user ID and call `ProjectAccessService.assertCanView()` or a more specific status-transition permission check before saving. Add a regression test for an outsider receiving `403`.
+This was a server-side authorization bypass, not merely a frontend visibility issue. It is now fixed; future permission changes should preserve the negative e2e test.
 
 ## 4. Data Models & Relationships
 
@@ -373,3 +374,57 @@ pnpm build
 ```
 
 `pnpm test` uses `mongodb-memory-server`; the normal development seed uses the configured MongoDB instance and clears the ProjectFlow collections before inserting sample data.
+
+## Code Review
+
+The Phase 3 implementation follows the existing controller-service-schema pattern and keeps authorization on the server. `TasksController` remains responsible for route parsing and current-user extraction, while `TasksService` owns assignment rules, task mutation, activity creation, and response serialization. This is the correct ownership boundary because the same rules apply whether a request comes from the web UI or a direct API client.
+
+The strongest parts of the implementation are:
+
+- Assignees are stored as nullable `User` references rather than embedded user snapshots, so user identity remains consistent with the rest of the data model.
+- Assignment permissions are checked against project membership. A valid user ID alone is insufficient; the target must be a member of the project.
+- Organization owners/admins and project managers are distinguished from regular members through the existing access abstraction.
+- Activity records store stable IDs for actor, previous assignee, and new assignee. The API resolves those IDs into safe `UserSummary` objects without exposing credential fields.
+- Activity queries sort by `{ taskId: 1, createdAt: -1 }`, paginate at the database layer, and batch all actor/assignee lookups through one `findManyByIds` call. This avoids a per-row user query.
+
+Review points to preserve:
+
+- Assignment changes should remain atomic with the task update. The current implementation saves the task and then creates the activity record; a failure between those operations can leave a correct task state without history. A MongoDB transaction should wrap both writes when deployed on a replica set.
+- The current frontend loads the project member list before opening the selector. That is appropriate for the current project size, but large organizations should move search and pagination to the API rather than downloading every member.
+- The API accepts IDs in DTOs and validates their shape, but `toObjectId` and membership lookup must remain mandatory. Never trust a disabled frontend control as an authorization boundary.
+- Activity metadata is deliberately structured rather than rendered text. This keeps localization and future UI changes possible without rewriting historical records.
+
+## Scaling the Activity System
+
+For a deployment serving 500,000 users, activity history should remain a task-scoped event stream rather than a document embedded in tasks. The core strategy would be:
+
+1. **Indexes and query shape**
+
+Keep a compound index on `{ taskId: 1, createdAt: -1, _id: -1 }` so newest-first reads, deterministic tie-breaking, and cursor continuation use one index. If organization-wide audit views are required, add a separate index such as `{ organizationId: 1, createdAt: -1, _id: -1 }` or denormalize the organization ID into the activity document. Do not rely on `populate()` for high-volume pages; batch user projection or use a read model.
+
+2. **Cursor pagination**
+
+Replace page-number pagination for activity with an opaque cursor containing the last `(createdAt, _id)` pair. Query older records with a lexicographic condition and a bounded limit. This avoids large `skip` costs and remains stable while new events arrive at the head of the timeline.
+
+3. **Write path and event durability**
+
+Write the task mutation and activity record in one MongoDB transaction when consistency is required. At higher throughput, publish a durable domain event through an outbox collection and process it into the activity read model. Consumers must be idempotent, using a unique event ID.
+
+4. **Historical archiving**
+
+Keep a hot window, such as 6–12 months, in the primary activity collection. Move older records to partitioned archival storage or a separate archive collection by month. Retain a compact task-level summary for common UI views and provide an asynchronous export path for compliance or audit searches.
+
+5. **Operational controls**
+
+Project activity reads should be authorization-filtered before querying. Add rate limits, bounded page sizes, metrics for query latency and event lag, and retention policies. Monitor index size and cardinality, and avoid unbounded user-population joins in request handlers.
+
+## If I Had Two More Days
+
+1. Add transaction-backed task mutation plus activity creation, with failure-path tests proving no silent history gaps.
+2. Add comprehensive e2e coverage for owner/admin/manager/member assignment permutations, self-unassignment, invalid members, activity ordering, pagination, and unauthorized activity reads.
+3. Replace page-number activity pagination with cursor pagination and expose a `hasMore`/cursor response contract.
+4. Add server-side member search and pagination so the frontend does not load an entire project roster for the selector.
+5. Add an explicit activity type registry and schema version to support future events such as status, priority, and comment changes.
+6. Harden authentication by moving refresh credentials to secure HttpOnly cookies, adding rotation/revocation, and reducing access-token lifetime.
+7. Add database migrations/index verification for existing deployments, including counter backfill and the activity collection indexes.
+8. Add observability for authorization failures, activity write failures, slow task timelines, and unexpected assignment transitions.

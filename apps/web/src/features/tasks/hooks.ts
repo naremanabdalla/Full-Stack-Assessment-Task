@@ -1,13 +1,21 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Paginated, TaskDetail, TaskStatus, TaskSummary } from '@projectflow/shared';
+import type {
+  Paginated,
+  TaskActivityEntry,
+  TaskDetail,
+  TaskStatus,
+  TaskSummary,
+} from '@projectflow/shared';
 import { queryKeys } from '@/lib/query-keys';
 import {
   createTask,
   type CreateTaskPayload,
   fetchProjectTasks,
   fetchTask,
+  fetchTaskActivity,
+  updateTask,
   updateTaskStatus,
 } from './api';
 
@@ -24,6 +32,29 @@ export function useTask(taskId: string) {
     queryKey: queryKeys.task(taskId),
     queryFn: () => fetchTask(taskId),
     enabled: taskId.length > 0,
+  });
+}
+
+export function useTaskActivity(taskId: string) {
+  return useQuery<Paginated<TaskActivityEntry>>({
+    queryKey: queryKeys.taskActivity(taskId),
+    queryFn: () => fetchTaskActivity(taskId),
+    enabled: taskId.length > 0,
+  });
+}
+
+export function useUpdateTaskAssignee(taskId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation<TaskDetail, Error, string | null>({
+    mutationFn: (assignee) => updateTask(taskId, { assignee }),
+    onSuccess: async (task) => {
+      queryClient.setQueryData(queryKeys.task(taskId), task);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.taskActivity(taskId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.projectTasks(task.projectId) }),
+      ]);
+    },
   });
 }
 

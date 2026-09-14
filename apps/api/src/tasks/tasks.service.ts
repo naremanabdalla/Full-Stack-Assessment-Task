@@ -1,12 +1,12 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { type FilterQuery, Model, Types } from 'mongoose';
-import type {
-  Paginated,
-  TaskActivityEntry,
-  TaskDetail,
-  TaskSummary,
-} from '@projectflow/shared';
+import type { Paginated, TaskActivityEntry, TaskDetail, TaskSummary } from '@projectflow/shared';
 import { toObjectId } from '../common/utils/object-id';
 import { toUserSummary } from '../common/utils/serialize';
 import { Comment, type CommentDocument } from '../comments/schemas/comment.schema';
@@ -128,10 +128,16 @@ export class TasksService {
       ? dto.assignee === null
         ? null
         : parseAssigneeId(dto.assignee)
-      : task.assigneeId ?? null;
+      : (task.assigneeId ?? null);
 
     if (hasAssigneeChange) {
-      await this.assertCanChangeAssignee(task.projectId, userId, nextAssigneeId, task.assigneeId ?? null, access);
+      await this.assertCanChangeAssignee(
+        task.projectId,
+        userId,
+        nextAssigneeId,
+        task.assigneeId ?? null,
+        access,
+      );
     }
 
     const isCreator = task.createdBy.equals(userId);
@@ -256,7 +262,10 @@ export class TasksService {
       return [];
     }
 
-    const userIds = tasks.flatMap((task) => [task.createdBy, ...(task.assigneeId ? [task.assigneeId] : [])]);
+    const userIds = tasks.flatMap((task) => [
+      task.createdBy,
+      ...(task.assigneeId ? [task.assigneeId] : []),
+    ]);
     const [users, commentRows] = await Promise.all([
       this.usersService.findManyByIds(userIds),
       this.commentModel
@@ -298,7 +307,8 @@ export class TasksService {
     currentAssigneeId: Types.ObjectId | null,
     access?: Awaited<ReturnType<ProjectAccessService['resolve']>>,
   ): Promise<void> {
-    const resolvedAccess = access ?? (await this.projectAccessService.assertCanView(projectId, actorId));
+    const resolvedAccess =
+      access ?? (await this.projectAccessService.assertCanView(projectId, actorId));
     if (nextAssigneeId === null && currentAssigneeId === null) {
       return;
     }

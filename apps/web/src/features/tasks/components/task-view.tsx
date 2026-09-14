@@ -2,11 +2,16 @@
 
 import { ArrowLeftIcon } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
+import { OrganizationRole, ProjectRole } from '@projectflow/shared';
 import { Avatar } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CommentList } from '@/features/comments/components/comment-list';
+import { useCurrentUser } from '@/features/auth/hooks';
+import { useProject, useProjectMembers } from '@/features/projects/hooks';
 import { formatDate } from '@/lib/format';
-import { useTask } from '../hooks';
+import { useTask, useUpdateTaskAssignee } from '../hooks';
+import { ActivityTimeline } from './activity-timeline';
+import { AssigneeSelector } from './assignee-selector';
 import { TaskPriorityBadge } from './task-priority-badge';
 import { TaskStatusSelect } from './task-status-select';
 
@@ -17,6 +22,10 @@ interface TaskViewProps {
 
 export function TaskView({ projectId, taskId }: TaskViewProps) {
   const { data: task, isPending, isError, error } = useTask(taskId);
+  const { data: project } = useProject(projectId);
+  const { data: members, isPending: areMembersPending } = useProjectMembers(projectId);
+  const { data: currentUser } = useCurrentUser();
+  const updateAssignee = useUpdateTaskAssignee(taskId);
 
   if (isPending) {
     return (
@@ -35,6 +44,18 @@ export function TaskView({ projectId, taskId }: TaskViewProps) {
       </p>
     );
   }
+
+  const currentMember = members?.find((member) => member.user.id === currentUser?.id);
+  const organizationRole = project?.organizationId
+    ? currentUser?.organizations.find((organization) => organization.id === project.organizationId)
+        ?.role
+    : undefined;
+  const canAssignOthers =
+    organizationRole === OrganizationRole.OWNER ||
+    organizationRole === OrganizationRole.ADMIN ||
+    currentMember?.role === ProjectRole.PROJECT_MANAGER;
+  const canEditCurrentAssignment =
+    canAssignOthers || task.assignee === null || task.assignee.id === currentUser?.id;
 
   return (
     <div className="space-y-6">
@@ -74,6 +95,23 @@ export function TaskView({ projectId, taskId }: TaskViewProps) {
         <aside className="space-y-5 lg:border-l lg:border-border lg:pl-6">
           <div className="space-y-1.5">
             <h2 className="text-[11px] font-medium uppercase tracking-wide text-subtle-foreground">
+              Assignee
+            </h2>
+            <AssigneeSelector
+              value={task.assignee}
+              members={members}
+              isLoading={areMembersPending}
+              disabled={!canEditCurrentAssignment}
+              disabledReason="Only the assignee or a project manager can change this assignment."
+              isSaving={updateAssignee.isPending}
+              canAssignOthers={canAssignOthers}
+              currentUserId={currentUser?.id}
+              onChange={(assignee) => updateAssignee.mutate(assignee)}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <h2 className="text-[11px] font-medium uppercase tracking-wide text-subtle-foreground">
               Status
             </h2>
             <TaskStatusSelect taskId={task.id} projectId={projectId} status={task.status} />
@@ -104,6 +142,8 @@ export function TaskView({ projectId, taskId }: TaskViewProps) {
           </div>
         </aside>
       </div>
+
+      <ActivityTimeline taskId={taskId} />
     </div>
   );
 }
