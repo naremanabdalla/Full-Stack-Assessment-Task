@@ -15,16 +15,13 @@ async function createApp() {
     bufferLogs: true,
   });
 
-  const configService = app.get(ConfigService);
 
   app.use(helmet());
 
   app.enableCors({
-    origin:
-      configService.get<string>('WEB_ORIGIN') ??
-      'http://localhost:3742',
-    credentials: true,
-  });
+  origin: true,
+  credentials: true,
+});
 
   app.useGlobalPipes(
     new ValidationPipe({
