@@ -1,36 +1,66 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import 'reflect-metadata';
+import { ValidationPipe } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
+import type { Request, Response } from 'express';
+import helmet from 'helmet';
+import { AppModule } from './app.module';
 
-export default function handler(
-  req: VercelRequest,
-  res: VercelResponse,
-) {
-  console.log('===== REQUEST HIT =====');
-  console.log('METHOD:', req.method);
-  console.log('URL:', req.url);
-  console.log('ORIGIN:', req.headers.origin);
+type ServerHandler = (req: Request, res: Response) => void;
 
-  res.setHeader(
-    'Access-Control-Allow-Origin',
-    'https://projectflow-web-eta.vercel.app',
-  );
-  res.setHeader(
-    'Access-Control-Allow-Methods',
-    'GET,POST,PUT,PATCH,DELETE,OPTIONS',
-  );
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'Content-Type, Authorization, Accept',
-  );
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
+let cachedServer: ServerHandler;
 
-  if (req.method === 'OPTIONS') {
-    console.log('===== OPTIONS HIT =====');
-    return res.status(204).end();
+async function bootstrapServer(): Promise<ServerHandler> {
+  if (!cachedServer) {
+    const app = await NestFactory.create(AppModule, {
+      bufferLogs: true,
+    });
+
+    app.enableCors({
+      origin: 'https://projectflow-web-eta.vercel.app',
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    });
+
+    app.use(helmet({ crossOriginResourcePolicy: false }));
+
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+        transformOptions: {
+          enableImplicitConversion: false,
+        },
+      }),
+    );
+
+    await app.init();
+
+    cachedServer = app.getHttpAdapter().getInstance() as ServerHandler;
   }
 
-  return res.status(200).json({
-    message: 'Backend function is working',
-    method: req.method,
-    url: req.url,
-  });
+  return cachedServer;
 }
+
+const handler = async (
+  req: Request,
+  res: Response,
+): Promise<void | Response> => {
+  try {
+    const server = await bootstrapServer();
+    return server(req, res);
+  } catch (error) {
+    console.error('BOOTSTRAP ERROR:', error);
+
+    return res.status(500).json({
+      statusCode: 500,
+      message: 'Server failed to start',
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+};
+
+export default handler;
+module.exports = handler;
+module.exports.default = handler;
