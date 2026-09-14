@@ -39,6 +39,7 @@
     "@types/jest": "30.0.0",
     "@types/node": "26.5.0",
     "@types/supertest": "7.2.1",
+    "@vercel/node": "^13.0.0",
     "eslint": "9.39.5",
     "jest": "30.5.1",
     "mongodb-memory-server": "11.2.0",
