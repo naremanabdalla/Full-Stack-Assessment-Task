@@ -19,6 +19,7 @@ async function bootstrapServer() {
     
     app.enableCors({
       origin: webOrigin === '*' ? true : webOrigin,
+      methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
       credentials: true,
     });
 
@@ -51,6 +52,7 @@ if (!process.env.VERCEL) {
     app.use(helmet());
     app.enableCors({
       origin: configService.get<string>('WEB_ORIGIN') ?? 'http://localhost:3742',
+      methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
       credentials: true,
     });
     app.useGlobalPipes(
