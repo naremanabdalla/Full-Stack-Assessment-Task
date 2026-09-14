@@ -13,15 +13,18 @@ async function bootstrapServer() {
     const app = await NestFactory.create(AppModule, { bufferLogs: true });
     const configService = app.get(ConfigService);
 
-    app.use(helmet());
-
-    const webOrigin = configService.get<string>('WEB_ORIGIN') ?? process.env.WEB_ORIGIN ?? '*';
-    
     app.enableCors({
-      origin: webOrigin === '*' ? true : webOrigin,
-      methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+      origin: true,
       credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
     });
+
+    app.use(
+      helmet({
+        crossOriginResourcePolicy: false,
+      }),
+    );
 
     app.useGlobalPipes(
       new ValidationPipe({
@@ -40,6 +43,15 @@ async function bootstrapServer() {
 }
 
 export default async function handler(req: Request, res: Response) {
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.status(204).end();
+    return;
+  }
+
   const server = await bootstrapServer();
   return server(req, res);
 }
@@ -49,12 +61,13 @@ if (!process.env.VERCEL) {
     const app = await NestFactory.create(AppModule, { bufferLogs: true });
     const configService = app.get(ConfigService);
 
-    app.use(helmet());
     app.enableCors({
       origin: configService.get<string>('WEB_ORIGIN') ?? 'http://localhost:3742',
-      methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
       credentials: true,
     });
+
+    app.use(helmet({ crossOriginResourcePolicy: false }));
+
     app.useGlobalPipes(
       new ValidationPipe({
         whitelist: true,
